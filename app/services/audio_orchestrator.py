@@ -1,144 +1,141 @@
-import os
-import json
-import base64
 import asyncio
+import base64
+import json
+import tempfile
+import time
+import wave
+from pathlib import Path
+
 from fastapi import WebSocket, WebSocketDisconnect
-from deepgram import DeepgramClient, LiveTranscriptionEvents, LiveOptions
-from elevenlabs.client import ElevenLabs
-from app.utils import logger
+
 from app.agents.persona import generate_persona_response
+from app.services.voice_service import synthesize_speech, transcribe_audio
+from app.utils import logger
+
 
 class AudioOrchestrator:
     def __init__(self, websocket: WebSocket):
         self.websocket = websocket
-        self.deepgram_client = DeepgramClient(os.getenv("DEEPGRAM_API_KEY"))
-        self.elevenlabs_client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
-        self.voice_id = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
-        self.stream_sid = None
-        self.deepgram_connection = None
-        self.is_listening = False
-        self.conversation_history = []
+        self.stream_sid: str | None = None
+        self.processing_audio = False
+        self.conversation_history: list[dict] = []
+        self.input_buffer = bytearray()
+        self.temp_dir = Path(tempfile.gettempdir()) / "kaizen_voice"
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
 
     async def start(self):
-        """Initialize connections to Deepgram and start processing."""
+        """Accept the websocket and process Twilio Media Stream events."""
         await self.websocket.accept()
-        self.deepgram_connection = self.deepgram_client.listen.live.v("1")
-        self.deepgram_connection.on(LiveTranscriptionEvents.Transcript, self.on_transcript)
-        self.deepgram_connection.on(LiveTranscriptionEvents.Error, self.on_error)
-        
-        options = LiveOptions(
-            model="nova-2",
-            language="en-US",
-            smart_format=True,
-            encoding="mulaw",
-            sample_rate=8000,
-            channels=1,
-            interim_results=False,
-            vad_events=True,
-            endpointing=500,
-        )
 
-        if not self.deepgram_connection.start(options):
-            logger.error("Failed to start Deepgram connection")
-            await self.websocket.close()
-            return
-
-        logger.info("Deepgram connection started")
-        self.is_listening = True
-        
         try:
             while True:
                 message = await self.websocket.receive_text()
                 data = json.loads(message)
                 await self.handle_twilio_message(data)
         except WebSocketDisconnect:
-            logger.info("WebSocket disconnected")
+            logger.info("Voice websocket disconnected")
         except Exception as e:
-            logger.error(f"Error in AudioOrchestrator loop: {e}")
+            logger.error(f"Error in AudioOrchestrator loop: {e}", exc_info=True)
         finally:
             await self.cleanup()
 
-    async def handle_twilio_message(self, data):
-        """Handle incoming messages from Twilio via WebSocket."""
+    async def handle_twilio_message(self, data: dict):
+        """Handle incoming Twilio websocket events."""
         event = data.get("event")
 
         if event == "start":
             self.stream_sid = data["start"]["streamSid"]
-            logger.info(f"Twilio Stream started: {self.stream_sid}")
+            logger.info(f"Twilio stream started: {self.stream_sid}")
             initial_text = "Hello? Who is this?"
             self.conversation_history.append({"sender": "ai", "text": initial_text})
-            asyncio.create_task(self.stream_tts(initial_text))
-        
-        elif event == "media":
-            if self.is_listening and self.deepgram_connection:
-                payload = data["media"]["payload"]
-                audio_data = base64.b64decode(payload)
-                self.deepgram_connection.send(audio_data)
-        
-        elif event == "stop":
-            logger.info("Twilio Stream stopped")
+            await self.stream_tts(initial_text)
+            return
+
+        if event == "media":
+            payload = data.get("media", {}).get("payload")
+            if not payload:
+                return
+
+            self.input_buffer.extend(base64.b64decode(payload))
+            if not self.processing_audio and len(self.input_buffer) >= 16000:
+                chunk = bytes(self.input_buffer)
+                self.input_buffer.clear()
+                asyncio.create_task(self.process_audio_chunk(chunk))
+            return
+
+        if event == "stop":
+            logger.info("Twilio stream stopped")
+            if self.input_buffer and not self.processing_audio:
+                chunk = bytes(self.input_buffer)
+                self.input_buffer.clear()
+                await self.process_audio_chunk(chunk)
             await self.cleanup()
 
-    def on_transcript(self, sender, result, **kwargs):
-        """Handle transcript received from Deepgram."""
-        if not result or not result.channel.alternatives:
+    async def process_audio_chunk(self, audio_chunk: bytes):
+        """Transcribe buffered caller audio, run the persona, and synthesize a reply."""
+        if not audio_chunk:
             return
-            
-        sentence = result.channel.alternatives[0].transcript
-        if not sentence:
-            return
-            
-        if result.is_final:
-            logger.info(f"User said: {sentence}")
-            self.conversation_history.append({"sender": "scammer", "text": sentence})
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(self.process_response(sentence))
-            except RuntimeError:
-                pass
 
-    def on_error(self, sender, error, **kwargs):
-        logger.error(f"Deepgram error: {error}")
-
-    async def process_response(self, text):
-        """Send text to Persona Agent and stream audio back."""
+        self.processing_audio = True
         try:
-            metadata = {"source": "voice_call"}
+            input_path = self._write_audio_chunk(audio_chunk)
+            transcript = await transcribe_audio(input_path)
+            if not transcript.strip():
+                logger.info("Voice transcription returned empty text.")
+                return
+
+            logger.info(f"Voice transcript: {transcript}")
+            self.conversation_history.append({"sender": "scammer", "text": transcript})
+
             response_text = await generate_persona_response(
                 conversation_history=self.conversation_history,
-                metadata=metadata
+                metadata={"source": "voice_call"},
             )
-            logger.info(f"AI Response: {response_text}")
+            logger.info(f"Voice persona response: {response_text}")
             self.conversation_history.append({"sender": "ai", "text": response_text})
-            await self.stream_tts(response_text)
-        except Exception as e:
-            logger.error(f"Error in process_response: {e}")
 
-    async def stream_tts(self, text):
-        """Stream audio from ElevenLabs to Twilio."""
+            output_path = str(self.temp_dir / f"tts_{int(time.time() * 1000)}.wav")
+            await synthesize_speech(response_text, output_path)
+            await self._send_audio_file(output_path)
+        except Exception as e:
+            logger.error(f"Error processing voice chunk: {e}", exc_info=True)
+        finally:
+            self.processing_audio = False
+
+    def _write_audio_chunk(self, audio_chunk: bytes) -> str:
+        """
+        Wrap the inbound Twilio audio bytes in a WAV container so they can be
+        handed to the transcription endpoint.
+        """
+        input_path = self.temp_dir / f"input_{int(time.time() * 1000)}.wav"
+        with wave.open(str(input_path), "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(1)
+            wav_file.setframerate(8000)
+            wav_file.writeframes(audio_chunk)
+        return str(input_path)
+
+    async def _send_audio_file(self, output_path: str):
+        if not self.stream_sid:
+            return
+
+        audio_bytes = Path(output_path).read_bytes()
+        audio_payload = base64.b64encode(audio_bytes).decode("utf-8")
+        media_message = {
+            "event": "media",
+            "streamSid": self.stream_sid,
+            "media": {"payload": audio_payload},
+        }
+        await self.websocket.send_json(media_message)
+
+    async def stream_tts(self, text: str):
+        output_path = str(self.temp_dir / f"greeting_{int(time.time() * 1000)}.wav")
         try:
-            audio_stream = self.elevenlabs_client.text_to_speech.convert(
-                text=text,
-                voice_id=self.voice_id,
-                model_id="eleven_turbo_v2",
-                output_format="ulaw_8000"
-            )
-
-            for chunk in audio_stream:
-                if chunk:
-                    audio_payload = base64.b64encode(chunk).decode("utf-8")
-                    media_message = {
-                        "event": "media",
-                        "streamSid": self.stream_sid,
-                        "media": {"payload": audio_payload}
-                    }
-                    await self.websocket.send_json(media_message)
+            await synthesize_speech(text, output_path)
+            await self._send_audio_file(output_path)
         except Exception as e:
-            logger.error(f"Error streaming TTS: {e}")
+            logger.error(f"Error streaming TTS: {e}", exc_info=True)
 
     async def cleanup(self):
-        """Close connections."""
-        self.is_listening = False
-        if self.deepgram_connection:
-            self.deepgram_connection.finish()
+        self.processing_audio = False
         logger.info("AudioOrchestrator cleaned up")
