@@ -9,12 +9,10 @@ import asyncio
 import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 
 from app.config import (
-    FALLBACK_MODEL,
-    FALLBACK_PROVIDER,
     LLM_MODEL,
-    LLM_PROVIDER,
     LLM_TIMEOUT_SECONDS,
     OPENAI_API_KEY,
     OPENAI_REASONING_EFFORT,
@@ -23,67 +21,26 @@ from app.config import (
 from app.utils import logger
 
 
-def _build_openai_llm(model_name: str, role: str):
+def _build_openai_llm():
     """Build the OpenAI chat model used by the persona agent."""
     if not OPENAI_API_KEY:
-        logger.warning(f"OpenAI API key missing. Cannot initialize {role} LLM.")
+        logger.warning("OpenAI API key missing. Cannot initialize persona LLM.")
         return None
 
-    from langchain_openai import ChatOpenAI
-
-    logger.info(f"Using OpenAI ({role}) with model={model_name}")
+    logger.info(f"Using OpenAI persona model={LLM_MODEL}")
     llm_kwargs = {
-        "model": model_name,
+        "model": LLM_MODEL,
         "api_key": OPENAI_API_KEY,
+        "temperature": 0.8,
         "max_tokens": 200,
-        "use_responses_api": True,
     }
 
-    if model_name.startswith("gpt-5"):
+    if LLM_MODEL.startswith("gpt-5"):
+        llm_kwargs["use_responses_api"] = True
         llm_kwargs["reasoning_effort"] = OPENAI_REASONING_EFFORT
         llm_kwargs["verbosity"] = OPENAI_VERBOSITY
-        llm_kwargs["temperature"] = 0.8
-    else:
-        llm_kwargs["temperature"] = 0.8
 
-    return ChatOpenAI(
-        **llm_kwargs,
-    )
-
-
-def get_primary_llm():
-    """Get the primary LLM for persona generation."""
-    if LLM_PROVIDER == "openai":
-        try:
-            return _build_openai_llm(LLM_MODEL, "Primary")
-        except Exception as e:
-            logger.warning(f"Primary OpenAI init failed: {e}")
-            return get_secondary_llm()
-
-    logger.warning(
-        f"Unsupported primary provider '{LLM_PROVIDER}'. "
-        "Expected 'openai' after the migration; falling back."
-    )
-    return get_secondary_llm()
-
-
-def get_secondary_llm():
-    """Get the fallback LLM for persona generation."""
-    if FALLBACK_PROVIDER in {"", "none"}:
-        logger.info("No fallback LLM configured.")
-        return None
-
-    if FALLBACK_PROVIDER == "openai":
-        try:
-            return _build_openai_llm(FALLBACK_MODEL, "Fallback/Secondary")
-        except Exception as e:
-            logger.warning(f"Fallback OpenAI init failed: {e}")
-            return None
-
-    logger.warning(
-        f"Fallback provider '{FALLBACK_PROVIDER}' is not supported in the OpenAI migration yet."
-    )
-    return None
+    return ChatOpenAI(**llm_kwargs)
 
 
 def get_llm():
@@ -91,7 +48,11 @@ def get_llm():
     Wrapper for backward compatibility.
     Used by detection.py
     """
-    return get_primary_llm()
+    try:
+        return _build_openai_llm()
+    except Exception as e:
+        logger.warning(f"OpenAI persona init failed: {e}")
+        return None
 
 
 JAILBREAK_TRIGGERS = [
@@ -184,36 +145,19 @@ Your response:"""
         HumanMessage(content=user_prompt),
     ]
 
-    persona_text = ""
-
     try:
-        llm = get_primary_llm()
+        llm = get_llm()
         if llm is not None:
             response = await asyncio.wait_for(llm.ainvoke(messages), timeout=LLM_TIMEOUT_SECONDS)
             persona_text = response.content.strip()
             persona_text = clean_persona_response(persona_text)
+            if persona_text:
+                logger.info(f"OK: Persona response ({context_strategy['mode']}): {persona_text[:60]}...")
+                return persona_text
     except Exception as e:
-        logger.warning(f"Primary LLM failed/timed out: {e}")
+        logger.warning(f"Persona LLM failed/timed out: {e}")
 
-    if not persona_text:
-        logger.warning("Primary LLM returned empty/failed. Attempting fallback LLM...")
-        try:
-            llm_fallback = get_secondary_llm()
-            if llm_fallback is not None:
-                response = await asyncio.wait_for(
-                    llm_fallback.ainvoke(messages),
-                    timeout=LLM_TIMEOUT_SECONDS,
-                )
-                persona_text = response.content.strip()
-                persona_text = clean_persona_response(persona_text)
-        except Exception as e:
-            logger.error(f"Fallback LLM also failed: {e}")
-
-    if persona_text:
-        logger.info(f"OK: Persona response ({context_strategy['mode']}): {persona_text[:60]}...")
-        return persona_text
-
-    logger.error("ALL LLMs FAILED (Empty Response). Switching to randomized text fallback.")
+    logger.error("Persona LLM returned empty/failed. Switching to randomized text fallback.")
     return get_fallback_response(conversation_history)
 
 
