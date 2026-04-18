@@ -1,0 +1,31 @@
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-dotenv==1.0.0
+# Networking
+requests==2.31.0
+aiohttp==3.9.1
+websockets
+twilio
+# Pydantic
+pydantic==2.9.2
+# LangChain Ecosystem
+langchain-groq
+langchain-cerebras
+langchain-openai
+langchain-core
+# LangGraph
+langgraph
+# ML Model
+scikit-learn>=1.3.0
+# Utilities
+jiter
+openai
+tiktoken
+# Database
+psycopg2-binary
+sqlalchemy
+# Voice AI
+deepgram-sdk>=3.0.0,<5.0.0
+elevenlabs
+# resolved conflict

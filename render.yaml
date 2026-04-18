@@ -1,0 +1,84 @@
+services:
+  # ==========================================
+  # 1. BACKEND API (FastAPI)
+  # ==========================================
+  - type: web
+    name: honey-api
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: CEREBRAS_API_KEY
+        sync: false
+      - key: API_KEY
+        sync: false
+      - key: LLM_MODEL
+        value: zai-glm-4.7
+      # Voice AI Configuration
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_PHONE_NUMBER
+        sync: false
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
+      - key: _CALLBACK_URL
+        sync: false
+
+  # ==========================================
+  # 2. TELEGRAM BOT (Webhook Web Service)
+  # ==========================================
+  - type: web
+    name: honey-bot
+    env: python
+    region: singapore
+    plan: free
+    healthCheckPath: /health
+    # Install both main and bot requirements
+    buildCommand: pip install -r requirements.txt && pip install -r bot/requirements.txt
+    startCommand: python run_bot.py
+    envVars:
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: honey-api
+          envVarKey: DATABASE_URL
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: API_BASE_URL
+        value: https://honey-api-wr74.onrender.com
+      - key: API_KEY
+        sync: false
+      - key: PRODUCTION_BOT_URL
+        value: https://honey-bot-9kce.onrender.com
+      - key: PYTHONUNBUFFERED
+        value: "true"
+
+  # ==========================================
+  # 3. FRONTEND DASHBOARD (Web Service)
+  # ==========================================
+  - type: web
+    name: honey-dashboard
+    env: node
+    region: singapore
+    plan: free
+    # Build the React app and install serve to host it
+    buildCommand: cd dashboard && npm install && npm run build && npm install -g serve
+    # Serve the built files on the assigned PORT
+    startCommand: serve -s dashboard/dist -l $PORT
+    envVars:
+      - key: VITE_API_URL
+        value: https://honey-api-wr74.onrender.com
+
+# CONFIG: Optimized for Render deployment
