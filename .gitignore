@@ -9,3 +9,5 @@ venv/
 *.egg-info/
 honeypot.db
 app/services/_known_scam_embeddings.json
+dashboard/node_modules/
+dashboard/dist/

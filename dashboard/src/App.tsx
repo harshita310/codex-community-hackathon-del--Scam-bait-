@@ -36,9 +36,11 @@ const INITIAL_INTEL: Intelligence = {
 };
 
 function App() {
-  // Use production API URL (hardcoded for deployment)
-  const apiUrl = 'https://honey-api-wr74.onrender.com';
-  const wsUrl = apiUrl.replace('https', 'wss') + '/ws/dashboard';
+  const configuredApiUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, '') ?? '';
+  const apiUrl = configuredApiUrl;
+  const wsUrl = configuredApiUrl
+    ? configuredApiUrl.replace(/^http/, 'ws') + '/ws/dashboard'
+    : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/dashboard`;
   
   const { isConnected, lastMessage } = useWebSocket(wsUrl);
   
