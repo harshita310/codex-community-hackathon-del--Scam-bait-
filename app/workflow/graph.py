@@ -14,6 +14,8 @@ from app.agents.persona import generate_persona_response
 from app.agents.extraction import extract_intelligence
 from app.agents.hallucination_filter import validate_persona_output
 from app.agents.timeline import get_conversation_summary, calculate_confidence_level
+from app.agents.vision import analyze_scam_image
+from app.services.memory_service import is_semantically_similar_to_scam
 
 from app.utils import (
     logger, 
@@ -28,6 +30,19 @@ from app.utils import (
 # ============================================
 # NODE FUNCTIONS
 # ============================================
+
+def _get_latest_message(state: AgentState) -> dict:
+    return state["conversationHistory"][-1] if state.get("conversationHistory") else {}
+
+
+def _state_has_image_payload(state: AgentState) -> bool:
+    latest_message = _get_latest_message(state)
+    return bool(
+        latest_message.get("image_url")
+        or latest_message.get("image_data")
+        or state.get("image_url")
+        or state.get("image_data")
+    )
 
 def load_session_node(state: AgentState) -> AgentState:
     """
@@ -63,6 +78,8 @@ def load_session_node(state: AgentState) -> AgentState:
         # Append the new message to the END of the history
         state["conversationHistory"].append(new_message)
         state["totalMessages"] += 1
+        state["image_url"] = new_message.get("image_url")
+        state["image_data"] = new_message.get("image_data")
     else:
         logger.info(f"NEW: Creating new session")
         session_logger.info("Created new session")
@@ -87,12 +104,21 @@ async def detection_node(state: AgentState) -> AgentState:
     # ALWAYS RUN DETECTION (Continuous Monitoring)
     # Optimized: ML+Rules are fast enough to run every turn
     with PerformanceLogger("Detection Agent", logger):
-        # Check specific message?
-        # Actually, we should check the LATEST message:
-        last_message = state["conversationHistory"][-1]["text"]
+        latest_message = _get_latest_message(state)
+        last_message = latest_message.get("text", "")
         
         # Now await the async function
         is_scam, confidence, scam_type = await detect_scam(last_message)
+        state["confidenceScore"] = max(state.get("confidenceScore", 0.0), confidence)
+
+        if is_semantically_similar_to_scam(last_message):
+            confidence = min(confidence + 0.1, 1.0)
+            state["confidenceScore"] = max(state.get("confidenceScore", 0.0), confidence)
+            logger.info("Semantic scam memory matched. Boosting confidence by 0.10")
+            if not is_scam and confidence >= 0.7:
+                is_scam = True
+                if scam_type == "NONE":
+                    scam_type = "UNKNOWN"
         
         # Update or Maintain scam status
         # If EVER detected as scam, keep it true (Latch)
@@ -122,6 +148,46 @@ async def detection_node(state: AgentState) -> AgentState:
     return state
 
 
+async def vision_check_node(state: AgentState) -> AgentState:
+    """
+    Node 2.5: Analyze image payloads when present.
+    """
+    if not _state_has_image_payload(state):
+        return state
+
+    latest_message = _get_latest_message(state)
+    image_url = latest_message.get("image_url") or state.get("image_url")
+    image_data = latest_message.get("image_data") or state.get("image_data")
+
+    try:
+        with PerformanceLogger("Vision Agent", logger):
+            vision_result = await analyze_scam_image(
+                image_url=image_url,
+                image_base64=image_data,
+            )
+        state["visionAnalysis"] = vision_result
+
+        vision_note = (
+            f"Vision: scam_image={vision_result.get('is_scam_image', False)} "
+            f"confidence={vision_result.get('confidence', 0.0):.2f} "
+            f"indicators={vision_result.get('indicators_found', [])}"
+        )
+        if state.get("agentNotes"):
+            state["agentNotes"] += f" | {vision_note}"
+        else:
+            state["agentNotes"] = vision_note
+
+        if vision_result.get("is_scam_image", False):
+            state["scamDetected"] = True
+            state["confidenceScore"] = min(state.get("confidenceScore", 0.0) + 0.2, 1.0)
+            if state.get("scamType") in {None, "", "NONE", "UNKNOWN"}:
+                state["scamType"] = "UPI_SCAM"
+    except Exception as e:
+        logger.error(f"Vision node failed: {e}", exc_info=True)
+
+    return state
+
+
 async def persona_node(state: AgentState) -> AgentState:
     """
     Node 3: Generate context-aware persona response using LLM.
@@ -146,7 +212,7 @@ async def persona_node(state: AgentState) -> AgentState:
             
             logger.debug("Extracting current intelligence for persona context...")
             
-            current_intelligence = extract_intelligence(
+            current_intelligence = await extract_intelligence(
                 conversation_history=state["conversationHistory"]
             )
             
@@ -233,7 +299,7 @@ async def persona_node(state: AgentState) -> AgentState:
     return state
 
 
-def extraction_node(state: AgentState) -> AgentState:
+async def extraction_node(state: AgentState) -> AgentState:
     """
     Node 4: Extract intelligence from conversation.
     
@@ -251,7 +317,7 @@ def extraction_node(state: AgentState) -> AgentState:
     try:
         with PerformanceLogger("Extraction Agent", logger):
             # Extract intelligence
-            intelligence = extract_intelligence(
+            intelligence = await extract_intelligence(
                 conversation_history=state["conversationHistory"]
             )
             
@@ -439,6 +505,13 @@ def route_after_detection(state: AgentState) -> Literal["persona", "not_scam"]:
     return "not_scam"
 
 
+def route_after_detection_with_vision(state: AgentState) -> Literal["vision_check", "persona", "not_scam"]:
+    if _state_has_image_payload(state):
+        logger.info("Routing: image payload detected -> vision_check")
+        return "vision_check"
+    return route_after_detection(state)
+
+
 # ============================================
 # BUILD THE GRAPH
 # ============================================
@@ -479,12 +552,13 @@ def create_workflow_graph():
     
     workflow.add_node("load_session", load_session_node)
     workflow.add_node("detection", detection_node)
+    workflow.add_node("vision_check", vision_check_node)
     workflow.add_node("persona", persona_node)
     workflow.add_node("extraction", extraction_node)
     workflow.add_node("not_scam", not_scam_node)
     workflow.add_node("save_session", save_session_node)
     
-    logger.debug("OK: Added 6 nodes to graph")
+    logger.debug("OK: Added 7 nodes to graph")
     
     # ============================================
     # SET ENTRY POINT
@@ -510,6 +584,16 @@ def create_workflow_graph():
     # From detection → conditional: scam or not_scam
     workflow.add_conditional_edges(
         "detection",
+        route_after_detection_with_vision,
+        {
+            "vision_check": "vision_check",
+            "persona": "persona",
+            "not_scam": "not_scam"
+        }
+    )
+
+    workflow.add_conditional_edges(
+        "vision_check",
         route_after_detection,
         {
             "persona": "persona",
@@ -529,7 +613,7 @@ def create_workflow_graph():
     # From save_session → END
     workflow.add_edge("save_session", END)
     
-    logger.debug("OK: Added all edges (2 conditional, 4 direct)")
+    logger.debug("OK: Added all edges (3 conditional, 4 direct)")
     
     # ============================================
     # COMPILE THE GRAPH
@@ -538,9 +622,9 @@ def create_workflow_graph():
     compiled_graph = workflow.compile()
     
     logger.info("OK: LangGraph workflow compiled successfully")
-    logger.info("   Nodes: 6 (load_session, detection, persona, extraction, not_scam, save_session)")
-    logger.info("   Edges: 6 (2 conditional routing points)")
-    logger.info("   Features: Context-aware persona, dynamic termination, logging, final callback")
+    logger.info("   Nodes: 7 (load_session, detection, vision_check, persona, extraction, not_scam, save_session)")
+    logger.info("   Edges: 7 (3 conditional routing points)")
+    logger.info("   Features: context-aware persona, semantic memory, vision analysis, logging, final callback")
     
     return compiled_graph
 
@@ -600,10 +684,13 @@ async def run_honeypot_workflow(request: HoneypotRequest) -> JudgeResponse:
         conversationHistory=[{
             "sender": scammer_message.sender,
             "text": scammer_message.text,
-            "timestamp": scammer_message.timestamp
+            "timestamp": scammer_message.timestamp,
+            "image_url": scammer_message.image_url,
+            "image_data": scammer_message.image_data,
         }],
         metadata=metadata,
         scamDetected=False,
+        scamType="UNKNOWN",
         extractedIntelligence={
             "bankAccounts": [],
             "upiIds": [],
@@ -611,12 +698,16 @@ async def run_honeypot_workflow(request: HoneypotRequest) -> JudgeResponse:
             "phoneNumbers": [],
             "suspiciousKeywords": []
         },
+        confidenceScore=0.0,
         totalMessages=1,
         startTime=scammer_message.timestamp,
         lastUpdated=scammer_message.timestamp,
         agentNotes="",
         sessionStatus="active",
-        callbackSent=False  # Init new field
+        callbackSent=False,  # Init new field
+        image_url=scammer_message.image_url,
+        image_data=scammer_message.image_data,
+        visionAnalysis=None,
     )
     
     # ============================================
@@ -720,6 +811,7 @@ async def run_honeypot_workflow(request: HoneypotRequest) -> JudgeResponse:
             persona=persona,
             turn=final_state["totalMessages"],
             confidence=confidence,
+            scamType=final_state.get("scamType", "UNKNOWN"),
             agentNotes=sanitized_notes  # <-- SANITIZED
         )
         

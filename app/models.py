@@ -26,6 +26,8 @@ class Message(BaseModel):
     sender: str          # "scammer" or "user"
     text: str = Field(..., max_length=10000, description="Message content (max 10k chars)")            # The actual message content
     timestamp: Union[str, int]       # ISO format (str) or Unix timestamp (int)
+    image_url: Optional[str] = None
+    image_data: Optional[str] = None
 
 
 class Metadata(BaseModel):
@@ -200,10 +202,15 @@ class AgentState(TypedDict):
     conversationHistory: List[Dict]     # All messages so far
     metadata: Optional[Dict]            # Channel, language, locale
     scamDetected: bool                  # Is this a scam?
+    scamType: str                       # Scam category
     extractedIntelligence: Dict         # Data extracted from scammer
+    confidenceScore: float              # Aggregate confidence for the workflow
     totalMessages: int                  # Count of messages
     startTime: Optional[str]            # When conversation started
     lastUpdated: Optional[str]          # Last update timestamp
     agentNotes: str                     # Notes about scammer behavior
     sessionStatus: Optional[str]        # "active" or "closed"
     callbackSent: bool                  # IDEMPOTENCY: Has final callback been sent? 
+    image_url: Optional[str]            # Latest image URL if present
+    image_data: Optional[str]           # Latest base64 image payload if present
+    visionAnalysis: Optional[Dict]      # Vision analysis output
