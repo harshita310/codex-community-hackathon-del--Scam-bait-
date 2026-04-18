@@ -17,6 +17,8 @@ from app.config import (
     LLM_PROVIDER,
     LLM_TIMEOUT_SECONDS,
     OPENAI_API_KEY,
+    OPENAI_REASONING_EFFORT,
+    OPENAI_VERBOSITY,
 )
 from app.utils import logger
 
@@ -30,11 +32,22 @@ def _build_openai_llm(model_name: str, role: str):
     from langchain_openai import ChatOpenAI
 
     logger.info(f"Using OpenAI ({role}) with model={model_name}")
+    llm_kwargs = {
+        "model": model_name,
+        "api_key": OPENAI_API_KEY,
+        "max_tokens": 200,
+        "use_responses_api": True,
+    }
+
+    if model_name.startswith("gpt-5"):
+        llm_kwargs["reasoning_effort"] = OPENAI_REASONING_EFFORT
+        llm_kwargs["verbosity"] = OPENAI_VERBOSITY
+        llm_kwargs["temperature"] = 0.8
+    else:
+        llm_kwargs["temperature"] = 0.8
+
     return ChatOpenAI(
-        model=model_name,
-        api_key=OPENAI_API_KEY,
-        temperature=0.8,
-        max_tokens=200,
+        **llm_kwargs,
     )
 
 

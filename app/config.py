@@ -43,13 +43,15 @@ DATABASE_URL = _get_env("DATABASE_URL") or f"sqlite:///{DATABASE_PATH}"
 
 
 # OpenAI-first model defaults
-OPENAI_CHAT_MODEL = _get_env("OPENAI_CHAT_MODEL", _get_env("LLM_MODEL", "gpt-4o"))
-OPENAI_STT_MODEL = _get_env("OPENAI_STT_MODEL", "whisper-1")
-OPENAI_TTS_MODEL = _get_env("OPENAI_TTS_MODEL", "tts-1-hd")
+OPENAI_CHAT_MODEL = _get_env("OPENAI_CHAT_MODEL", _get_env("LLM_MODEL", "gpt-5.4"))
+OPENAI_REASONING_EFFORT = _get_env("OPENAI_REASONING_EFFORT", "none")
+OPENAI_VERBOSITY = _get_env("OPENAI_VERBOSITY", "low")
+OPENAI_STT_MODEL = _get_env("OPENAI_STT_MODEL", "gpt-4o-transcribe-latest")
+OPENAI_TTS_MODEL = _get_env("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
 OPENAI_TTS_VOICE = _get_env("OPENAI_TTS_VOICE", "alloy")
-OPENAI_EMBEDDING_MODEL = _get_env("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+OPENAI_EMBEDDING_MODEL = _get_env("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
 OPENAI_VISION_MODEL = _get_env("OPENAI_VISION_MODEL", OPENAI_CHAT_MODEL)
-OPENAI_REALTIME_MODEL = _get_env("OPENAI_REALTIME_MODEL", "")
+OPENAI_REALTIME_MODEL = _get_env("OPENAI_REALTIME_MODEL", "gpt-realtime")
 
 
 # Runtime provider selection used by the current agents
