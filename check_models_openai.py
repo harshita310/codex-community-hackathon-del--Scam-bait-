@@ -1,25 +1,24 @@
-from openai import OpenAI
 import os
+
 from dotenv import load_dotenv
+from openai import OpenAI
+
 
 load_dotenv()
 
-api_key = os.getenv("CEREBRAS_API_KEY")
-if not api_key:
-    print("Error: CEREBRAS_API_KEY not found")
-    exit(1)
 
-# Cerebras is OpenAI compatible!
-client = OpenAI(
-    api_key=api_key,
-    base_url="https://api.cerebras.ai/v1"
-)
+api_key = os.getenv("OPENAI_API_KEY")
+model_name = os.getenv("LLM_MODEL", "gpt-5.4")
+
+if not api_key:
+    print("Error: OPENAI_API_KEY not found")
+    raise SystemExit(1)
+
+
+client = OpenAI(api_key=api_key)
 
 try:
-    print("Connecting to Cerebras API...")
-    models = client.models.list()
-    print("\nAvailable Models:")
-    for model in models.data:
-        print(f"- {model.id}")
-except Exception as e:
-    print(f"Error listing models: {e}")
+    model = client.models.retrieve(model_name)
+    print(f"Configured chat model is available: {model.id}")
+except Exception as exc:
+    print(f"Error retrieving model '{model_name}': {exc}")

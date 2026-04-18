@@ -1,55 +1,50 @@
-# Deploy Telegram Bot to Render (Manual)
+# Deploy Telegram Bot to Render
 
-Since the API and Dashboard are already deployed, we just need to add the Bot as a Background Worker.
+Use this guide if you want to deploy the Telegram bot separately instead of via the full Render blueprint.
 
 ## Steps
 
-### 1. Go to Render Dashboard
-- Navigate to: https://dashboard.render.com/
+### 1. Open Render
+- Go to [Render Dashboard](https://dashboard.render.com/).
 
-### 2. Create New Background Worker
-- Click **New +** → **Background Worker**
-
-### 3. Connect Repository
-- Select your repository: `somewherelostt/scam_bait_bot_tts_web`
+### 2. Create a New Web Service
+- Click **New +** -> **Web Service**
+- Connect the repository: `harshita310/KAIZEN`
 - Branch: `main`
 
-### 4. Configure Service
-Fill in the following:
+### 3. Configure the Service
 
 | Field | Value |
 |-------|-------|
 | **Name** | `honey-bot` |
-| **Region** | Singapore (or same as your API) |
+| **Region** | Singapore (or the same region as the API) |
 | **Environment** | Python |
 | **Build Command** | `pip install -r requirements.txt && pip install -r bot/requirements.txt` |
 | **Start Command** | `python run_bot.py` |
 
-### 5. Add Environment Variables
+### 4. Add Environment Variables
 
-Click **Add Environment Variable** for each:
+Set these in Render with your own values:
 
 | Key | Value |
 |-----|-------|
-| `DATABASE_URL` | `postgresql://postgres:eEK9zyukPFolHiNZ@db.tyjqrnemtihgwppkcsgs.supabase.co:5432/postgres` |
-| `TELEGRAM_BOT_TOKEN` | `8229177567:AAFhlrMxT0JnKA9eoYie9OdmslUT-8NSs4k` |
-| `API_BASE_URL` | `https://honey-api-wr74.onrender.com` |
-| `GROQ_API_KEY` | Your Groq API key |
+| `TELEGRAM_BOT_TOKEN` | Your BotFather token |
+| `API_KEY` or `HONEYPOT_API_KEY` | The shared API key used by the backend |
+| `API_BASE_URL` | Your deployed API base URL, for example `https://your-api-service.onrender.com` |
+| `PRODUCTION_BOT_URL` | Your deployed bot URL, for example `https://your-bot-service.onrender.com` |
+| `DATABASE_URL` | Optional if the bot should share the same hosted database |
 
-### 6. Deploy
-- Click **Create Background Worker**
-- Wait for build to complete
-
-### 7. Verify
-- Check the logs to ensure the bot started successfully
-- Send `/start` to your Telegram bot to test
-
-## Troubleshooting
-
-If the bot doesn't respond:
-1. Check Render logs for errors
-2. Verify `TELEGRAM_BOT_TOKEN` is correct
-3. Ensure `API_BASE_URL` points to your deployed API
+### 5. Deploy and Verify
+- Click **Create Web Service**
+- Wait for the service to finish building
+- Open `/health` on the bot URL and confirm it returns `Bot is running! (webhook mode)`
+- Send `/start` to your Telegram bot and confirm it replies
 
 ## Troubleshooting
-Check logs if webhook fails to bind.
+
+If the bot does not respond:
+
+1. Check the Render logs for webhook or startup errors.
+2. Confirm `PRODUCTION_BOT_URL` matches the live Render bot URL.
+3. Confirm `API_BASE_URL` points to a reachable backend service.
+4. Confirm the backend accepts the same `API_KEY` or `HONEYPOT_API_KEY`.

@@ -1,63 +1,64 @@
-# Deployment Guide: HoneyPot Scam Detection
+# Deployment Guide: ScamBait AI on Render
 
-This guide walks you through deploying the entire system (Frontend, Backend, Bot) to **Render** using **Supabase** as the database.
+This guide covers deploying the backend API, Telegram bot, and dashboard from this repository to Render.
 
-## 1. Setup Database (Supabase)
+## 1. Prepare the Repository
 
-1.  **Create Project**: Go to [Supabase](https://supabase.com/), sign in, and create a "New Project".
-2.  **Set Password**: Create a strong database password and **save it**.
-3.  **Get Connection String**:
-    - Go to **Project Settings** (cog icon) -> **Database**.
-    - Under **Connection String**, select **URI**.
-    - Copy the string. It looks like:
-        `postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres`
-    - **Replace `[YOUR-PASSWORD]`** with the password you created in step 2.
-    - **Note this URL** as your `DATABASE_URL`.
+1. Make sure the latest changes are pushed to GitHub.
+2. Confirm the repository is public if you need it for hackathon submission.
+3. Confirm `.env` is not committed and only `.env.example` is tracked.
 
-## 2. Prepare Code
+## 2. Required Environment Variables
 
-1.  **Commit & Push**: Ensure all your local changes are committed and pushed to GitHub.
-    ```bash
-    git add .
-    git commit -m "Prepare for deployment"
-    git push origin main
-    ```
+Render will prompt for the variables marked as `sync: false` in [render.yaml](C:\Users\lenovo\OneDrive\Desktop\KAIZEN\render.yaml). At minimum, prepare:
 
-## 3. Deploy to Render
+| Variable | Purpose |
+|---|---|
+| `OPENAI_API_KEY` | Required for persona, detection, extraction, vision, embeddings, speech, and realtime helpers |
+| `API_KEY` | Shared backend auth key used by the bot and API |
+| `DATABASE_URL` | Optional hosted database connection string; if omitted locally, SQLite is used |
+| `TELEGRAM_BOT_TOKEN` | BotFather token for the Telegram service |
+| `API_BASE_URL` or `HONEYPOT_API_URL` | Bot-to-backend endpoint |
+| `PRODUCTION_BOT_URL` | Public Render URL for the bot webhook service |
+| `TWILIO_ACCOUNT_SID` | Required for the Twilio voice route |
+| `TWILIO_AUTH_TOKEN` | Required for the Twilio voice route |
+| `TWILIO_PHONE_NUMBER` | Required for the Twilio voice route |
+| `_CALLBACK_URL` | Optional external callback target |
+| `VITE_API_URL` | Dashboard API base URL |
 
-1.  **Create Blueprint**:
-    - Go to [Render Dashboard](https://dashboard.render.com/).
-    - Click **New +** -> **Blueprint**.
-    - Connect your GitHub repository (`HoneyPot-Scam-Detection`).
-    - Give it a name (e.g., `scambait-system`).
+## 3. Deploy with Render Blueprint
 
-2.  **Configure Environment Variables**:
-    Render will detect `render.yaml` and ask for the following variables. Fill them in:
+1. Open [Render Dashboard](https://dashboard.render.com/).
+2. Click **New +** -> **Blueprint**.
+3. Connect the repository `harshita310/KAIZEN`.
+4. Let Render detect `render.yaml`.
+5. Fill in the required environment variables.
+6. Click **Apply**.
 
-    | Variable | Value |
-    | :--- | :--- |
-    | `DATABASE_URL` | Paste the **Supabase Connection String** from Step 1. |
-    | `TELEGRAM_BOT_TOKEN` | Your Bot Token from BotFather. |
-    | `GROQ_API_KEY` | Your Groq API Key. |
-    | `HACKATHON_API_KEY` | Your Hackathon Key (if applicable). |
-    | `LLM_MODEL` | `llama-3.1-8b-instant` (or your preferred model). |
+This blueprint deploys:
 
-3.  **Apply**:
-    - Click **Apply**. Render will start deploying 3 services:
-        - `honey-api` (Backend)
-        - `honey-bot` (Telegram Bot)
-        - `honey-dashboard` (Frontend)
+- `honey-api` for the FastAPI backend
+- `honey-bot` for the Telegram bot webhook service
+- `honey-dashboard` for the frontend dashboard
 
-## 4. Final Verification
+## 4. Verify the Deployment
 
-1.  **Wait for Build**: It may take a few minutes.
-2.  **Check Services**:
-    - **API**: Visit the URL for `honey-api` (e.g., `https://honey-api.onrender.com/docs`). You should see Swagger UI.
-    - **Dashboard**: Visit the URL for `honey-dashboard`. It should load and show stats (initially 0).
-    - **Bot**: Send `/start` to your Telegram bot. It should respond.
+After the build completes, verify these endpoints:
 
-## Troubleshooting
+1. Backend health: `https://<your-api-service>.onrender.com/health`
+2. Bot health: `https://<your-bot-service>.onrender.com/health`
+3. Dashboard root: `https://<your-dashboard-service>.onrender.com/`
 
-- **Database Errors**: Check the `honey-api` logs. Ensure `DATABASE_URL` is correct and you replaced the password.
-- **Bot Not Responding**: Check `honey-bot` logs. Ensure `TELEGRAM_BOT_TOKEN` is correct.
-- **Frontend Issues**: Ensure `VITE_API_URL` was correctly set by Render (it should happen automatically via `render.yaml`). If not, you may need to manually add `VITE_API_URL` to the **Dashboard Service** environment variables pointing to your API URL.
+Then test the product flows:
+
+1. Send `/start` to the Telegram bot.
+2. Send a sample scam-style message and confirm the bot replies.
+3. Open the dashboard and confirm it can reach the API.
+4. If Twilio is configured, place a test call and confirm `/voice/incoming` responds.
+
+## 5. Troubleshooting
+
+- If the API fails to boot, check the Render logs and confirm `OPENAI_API_KEY` is set.
+- If the bot fails to respond, confirm `PRODUCTION_BOT_URL`, `API_BASE_URL`, and `API_KEY` are all aligned.
+- If the dashboard cannot load data, confirm `VITE_API_URL` points to the live API service.
+- If voice fails, confirm the Twilio variables are present and that the public voice webhook points to the deployed backend.

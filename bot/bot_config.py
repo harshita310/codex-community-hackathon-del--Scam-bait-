@@ -20,15 +20,16 @@ if not TELEGRAM_BOT_TOKEN:
 # HONEYPOT API SETTINGS
 # ============================================
 
-# Get base API URL from environment (set by Render)
-# Fallback to production URL if env var is missing (safer than localhost for cloud deploy)
-DEFAULT_API_URL = "https://honey-api-wr74.onrender.com"
-API_BASE_URL = os.getenv("API_BASE_URL", DEFAULT_API_URL)
+# Get base API URL from environment (set by Render).
+# Default to localhost for local development instead of a stale hosted URL.
+DEFAULT_API_URL = "http://localhost:8000"
+API_BASE_URL = os.getenv("API_BASE_URL", DEFAULT_API_URL).rstrip("/")
 
 print(f"Bot Configuration: Using API_BASE_URL={API_BASE_URL}")
 
-# Construct full honeypot endpoint
-HONEYPOT_API_URL = f"{API_BASE_URL}/api/v1/honeypot"
+# Allow direct endpoint configuration for deployments where only the full API
+# path is known up front.
+HONEYPOT_API_URL = os.getenv("HONEYPOT_API_URL", f"{API_BASE_URL}/api/v1/honeypot")
 
 # Get API key
 HONEYPOT_API_KEY = os.getenv("HONEYPOT_API_KEY") or os.getenv("API_KEY", "")

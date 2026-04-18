@@ -12,26 +12,33 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
-      - key: GROQ_API_KEY
-        sync: false
-      - key: CEREBRAS_API_KEY
+      - key: OPENAI_API_KEY
         sync: false
       - key: API_KEY
         sync: false
       - key: LLM_MODEL
-        value: zai-glm-4.7
-      # Voice AI Configuration
+        value: gpt-5.4
+      - key: OPENAI_DETECTION_MODEL
+        value: gpt-5.4-mini
+      - key: OPENAI_EXTRACTION_MODEL
+        value: gpt-5.4
+      - key: WHISPER_MODEL
+        value: gpt-4o-transcribe
+      - key: TTS_MODEL
+        value: gpt-4o-mini-tts
+      - key: TTS_VOICE
+        value: nova
+      - key: OPENAI_EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: OPENAI_VISION_MODEL
+        value: gpt-5.4
+      - key: OPENAI_REALTIME_MODEL
+        value: gpt-realtime
       - key: TWILIO_ACCOUNT_SID
         sync: false
       - key: TWILIO_AUTH_TOKEN
         sync: false
       - key: TWILIO_PHONE_NUMBER
-        sync: false
-      - key: DEEPGRAM_API_KEY
-        sync: false
-      - key: ELEVENLABS_API_KEY
-        sync: false
-      - key: ELEVENLABS_VOICE_ID
         sync: false
       - key: _CALLBACK_URL
         sync: false
@@ -57,11 +64,15 @@ services:
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: API_BASE_URL
-        value: https://honey-api-wr74.onrender.com
+        sync: false
+      - key: HONEYPOT_API_URL
+        sync: false
       - key: API_KEY
         sync: false
+      - key: HONEYPOT_API_KEY
+        sync: false
       - key: PRODUCTION_BOT_URL
-        value: https://honey-bot-9kce.onrender.com
+        sync: false
       - key: PYTHONUNBUFFERED
         value: "true"
 
@@ -79,6 +90,6 @@ services:
     startCommand: serve -s dashboard/dist -l $PORT
     envVars:
       - key: VITE_API_URL
-        value: https://honey-api-wr74.onrender.com
+        sync: false
 
 # CONFIG: Optimized for Render deployment

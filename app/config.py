@@ -64,8 +64,7 @@ OPENAI_VERBOSITY = _get_env("OPENAI_VERBOSITY", "low")
 LLM_TIMEOUT_SECONDS = int(_get_env("LLM_TIMEOUT_SECONDS", "12"))
 
 
-# Legacy provider secrets intentionally removed from runtime config:
-# CEREBRAS_API_KEY, GROQ_API_KEY, DEEPGRAM_API_KEY, ELEVENLABS_API_KEY
+# Legacy provider secrets are intentionally excluded from the runtime config.
 
 
 MODE = _get_env("MODE", "prod").lower()

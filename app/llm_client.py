@@ -1,18 +1,34 @@
 import asyncio
-import os
-# import groq
+
+from openai import AsyncOpenAI
+
+from app.config import LLM_MODEL, OPENAI_API_KEY
+
 
 class LLMClient:
-    """Wrapper for Groq / Cerebras API calls."""
+    """Thin async wrapper around the configured OpenAI chat model."""
+
     def __init__(self):
-        self.api_key = os.getenv("GROQ_API_KEY", "dummy")
-        # self.client = groq.AsyncGroq(api_key=self.api_key)
-        
+        self.api_key = OPENAI_API_KEY or ""
+        self.client = AsyncOpenAI(api_key=self.api_key) if self.api_key else None
+
     async def generate(self, prompt: str) -> str:
-        # Timeout handling for LLM calls over poor network
+        if not self.client:
+            return "I am confused..."
+
         try:
-            # result = await asyncio.wait_for(self.client.chat.completions.create(...), timeout=15)
-            # return result.choices[0].message.content
-            return "I am confused..." # placeholder
+            result = await asyncio.wait_for(
+                self.client.chat.completions.create(
+                    model=LLM_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                ),
+                timeout=15,
+            )
+            message = result.choices[0].message.content
+            if isinstance(message, str):
+                return message
+            return "I am confused..."
         except asyncio.TimeoutError:
             return "Hello? Are you there?"
+        except Exception:
+            return "I am confused..."
