@@ -1,4 +1,9 @@
-﻿_backup/
+_backup/
 .env
 .env.local
 !.env.example
+__pycache__/
+*.pyc
+.DS_Store
+venv/
+*.egg-info/
