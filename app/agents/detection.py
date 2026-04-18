@@ -17,12 +17,16 @@ This is the same cascading pattern as the friend's approach,
 but trained on 100 samples instead of 10.
 """
 
+import json
+
+from fastapi.concurrency import run_in_threadpool
+from openai import AsyncOpenAI
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.svm import LinearSVC
 from sklearn.pipeline import Pipeline
+from sklearn.svm import LinearSVC
+
+from app.config import OPENAI_API_KEY, OPENAI_DETECTION_MODEL
 from app.utils import logger
-from app.agents.persona import get_llm
-from langchain_core.messages import SystemMessage, HumanMessage
 
 # ============================================
 # STEP 1 — RULE-BASED KEYWORDS
@@ -37,6 +41,58 @@ LEGIT_SENDERS = [
     "otp for", "your otp is",
     "sent you", "paid you", "credited", "debited"
 ]
+
+OPENAI_SCAM_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "classify_scam",
+        "description": "Classify whether an incoming message is part of a scam attempt.",
+        "strict": True,
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "is_scam": {"type": "boolean"},
+                "scam_type": {
+                    "type": "string",
+                    "enum": [
+                        "DIGITAL_ARREST",
+                        "UPI_SCAM",
+                        "JOB_SCAM",
+                        "SEXTORTION",
+                        "LOTTERY_SCAM",
+                        "NONE",
+                    ],
+                },
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                },
+                "extracted_entities": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "phone_numbers": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "upi_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "links": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": ["phone_numbers", "upi_ids", "links"],
+                },
+            },
+            "required": ["is_scam", "scam_type", "confidence", "extracted_entities"],
+        },
+    },
+}
 
 
 SCAM_KEYWORDS = [
@@ -144,7 +200,7 @@ def rule_based_score(text: str) -> dict:
         return {"rule_score": 0.0, "suspicious": False, "matched_keywords": [], "whitelisted": True}
 
     # ── PATTERN: Bare UPI ID present ──
-    upi_pattern = r'\b[\w\.\-]+@(paytm|okaxis|okhdfcbank|oksbi|okicici|ybl|upi)\b'
+    upi_pattern = r'\b[\w\.\-]+@(?:paytm|okaxis|okhdfcbank|oksbi|okicici|ybl|upi)\b'
     upi_found = re.findall(upi_pattern, text_lower)
 
     matched = [kw for kw in SCAM_KEYWORDS if kw in text_lower]
@@ -341,6 +397,86 @@ def ml_classify(text: str) -> dict:
 # MAIN — Cascading Detection
 # ============================================
 
+_OPENAI_CLIENT = AsyncOpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+
+
+def _normalize_openai_detection(payload: dict, text: str) -> dict:
+    extracted_entities = payload.get("extracted_entities") or {}
+    confidence = float(payload.get("confidence", 0.0))
+    confidence = max(0.0, min(1.0, confidence))
+
+    scam_type = payload.get("scam_type") or "NONE"
+    if payload.get("is_scam") and scam_type == "NONE":
+        scam_type = detect_scam_type(text)
+
+    return {
+        "is_scam": bool(payload.get("is_scam", False)),
+        "scam_type": scam_type,
+        "confidence": confidence,
+        "extracted_entities": {
+            "phone_numbers": extracted_entities.get("phone_numbers", []),
+            "upi_ids": extracted_entities.get("upi_ids", []),
+            "links": extracted_entities.get("links", []),
+        },
+    }
+
+
+async def detect_scam_with_openai(text: str) -> dict:
+    """
+    Use OpenAI tool calling when the local classifier is unsure or the
+    message is long / multilingual / non-ASCII.
+    """
+    if _OPENAI_CLIENT is None:
+        logger.warning("OpenAI detection requested but OPENAI_API_KEY is missing.")
+        return {
+            "is_scam": False,
+            "scam_type": "NONE",
+            "confidence": 0.0,
+            "extracted_entities": {"phone_numbers": [], "upi_ids": [], "links": []},
+        }
+
+    try:
+        response = await _OPENAI_CLIENT.chat.completions.create(
+            model=OPENAI_DETECTION_MODEL,
+            temperature=0,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a scam detection system for a scam-bait honeypot. "
+                        "Classify whether the message is a scam, identify the scam type, "
+                        "estimate confidence, and extract any visible phone numbers, UPI IDs, or links."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Classify this incoming message:\n\n{text}",
+                },
+            ],
+            tools=[OPENAI_SCAM_TOOL],
+            tool_choice={"type": "function", "function": {"name": "classify_scam"}},
+        )
+        tool_call = response.choices[0].message.tool_calls[0]
+        payload = json.loads(tool_call.function.arguments)
+        normalized = _normalize_openai_detection(payload, text)
+        logger.info(
+            "OpenAI detection result: is_scam=%s confidence=%.2f type=%s entities=%s",
+            normalized["is_scam"],
+            normalized["confidence"],
+            normalized["scam_type"],
+            normalized["extracted_entities"],
+        )
+        return normalized
+    except Exception as e:
+        logger.error(f"OpenAI scam detection failed: {e}", exc_info=True)
+        return {
+            "is_scam": False,
+            "scam_type": "NONE",
+            "confidence": 0.0,
+            "extracted_entities": {"phone_numbers": [], "upi_ids": [], "links": []},
+        }
+
+
 async def llm_fallback_check(text: str) -> tuple[bool, float]:
     """
     Use LLM to check for 'vibe' of scam when rules/ML are unsure.
@@ -463,14 +599,13 @@ async def detect_scam(text: str) -> tuple[bool, float, str]:
         return False, 0.0, "NONE"
 
     # Need at least 15% keyword match (4-5 keywords) to be confident
-    if rule_result["rule_score"] >= 0.15:
+    if rule_result.get("critical", False) or rule_result["rule_score"] >= 0.8:
         logger.info(f"🔍 Detection: SCAM detected by RULES (score={rule_result['rule_score']})")
         logger.info(f"   Matched keywords: {rule_result['matched_keywords']}")
         return True, 0.95, detect_scam_type(text)
 
     # ── Step 2: ML (Fast) ──
     # Run sync ML model in threadpool using NORMALIZED text
-    from fastapi.concurrency import run_in_threadpool
     ml_result = await run_in_threadpool(ml_classify, text)
 
     logger.info(f"🔍 Detection: Rules inconclusive (score={rule_result['rule_score']}) → ML consulted")
@@ -495,3 +630,72 @@ async def detect_scam(text: str) -> tuple[bool, float, str]:
     scam_type = detect_scam_type(text) if is_scam else "NONE"
     
     return is_scam, confidence, scam_type
+
+
+async def detect_scam(text: str) -> tuple[bool, float, str]:
+    """
+    Cascading detection pipeline with OpenAI function-calling fallback:
+        0. Jailbreak Check (instant block)
+        1. Normalization
+        2. Rules / trusted sender fast paths
+        3. ML fast path
+        4. OpenAI fallback for low-confidence, long, or non-ASCII messages
+
+    Returns: (is_scam, confidence, scam_type)
+    """
+    if is_jailbreak_attempt(text):
+        logger.warning(f"JAILBREAK ATTEMPT detected: {text[:80]}")
+        return True, 0.99, "JAILBREAK_ATTEMPT"
+
+    original_text = text
+    text = normalize_text(text)
+    if text != original_text:
+        logger.info(f"Text normalized: '{original_text[:20]}...' -> '{text[:20]}...'")
+
+    rule_result = rule_based_score(text)
+    if rule_result.get("whitelisted", False):
+        logger.info("Trusted sender detected. Skipping ML/OpenAI escalation.")
+        return False, 0.0, "NONE"
+
+    if rule_result.get("critical", False) or rule_result["rule_score"] >= 0.8:
+        logger.info(f"Detection: SCAM detected by rules (score={rule_result['rule_score']})")
+        logger.info(f"Matched keywords: {rule_result['matched_keywords']}")
+        return True, 0.95, detect_scam_type(text)
+
+    ml_result = await run_in_threadpool(ml_classify, text)
+    logger.info(
+        "Detection: rules inconclusive (score=%s) -> ML consulted",
+        rule_result["rule_score"],
+    )
+    logger.info(
+        "ML result: is_scam=%s confidence=%s",
+        ml_result["is_scam"],
+        ml_result["confidence"],
+    )
+
+    contains_non_ascii = any(ord(char) > 127 for char in text)
+    needs_openai = (
+        ml_result["confidence"] < 0.7
+        or len(text) > 100
+        or contains_non_ascii
+    )
+
+    if not needs_openai:
+        logger.info("Fast path: using ML result without OpenAI escalation.")
+        if ml_result["is_scam"]:
+            return True, ml_result["confidence"], detect_scam_type(text)
+        return False, ml_result["confidence"], "NONE"
+
+    logger.info("Escalating detection to OpenAI function calling.")
+    openai_result = await detect_scam_with_openai(text)
+    if openai_result["confidence"] > 0:
+        return (
+            openai_result["is_scam"],
+            openai_result["confidence"],
+            openai_result["scam_type"],
+        )
+
+    logger.warning("OpenAI detection unavailable. Falling back to ML result.")
+    if ml_result["is_scam"]:
+        return True, ml_result["confidence"], detect_scam_type(text)
+    return False, ml_result["confidence"], "NONE"
