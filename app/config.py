@@ -25,41 +25,47 @@ def _get_bool(name: str, default: bool = False) -> bool:
 API_KEY = _get_env("API_KEY") or _get_env("HACKATHON_API_KEY") or "temp-key"
 
 
-# Provider API keys
+# Primary provider credentials.
 OPENAI_API_KEY = _get_env("OPENAI_API_KEY")
-GROQ_API_KEY = _get_env("GROQ_API_KEY")
-CEREBRAS_API_KEY = _get_env("CEREBRAS_API_KEY")
 
 
-# Voice provider secrets kept here for the upcoming service migration
+# Voice / telephony credentials retained for the existing Twilio architecture.
 TWILIO_ACCOUNT_SID = _get_env("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = _get_env("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE_NUMBER = _get_env("TWILIO_PHONE_NUMBER")
 
 
-# Database configuration
+# Database configuration.
 DATABASE_PATH = _get_env("DATABASE_PATH", "honeypot.db")
 DATABASE_URL = _get_env("DATABASE_URL") or f"sqlite:///{DATABASE_PATH}"
 
 
-# OpenAI-first model defaults
-OPENAI_CHAT_MODEL = _get_env("OPENAI_CHAT_MODEL", _get_env("LLM_MODEL", "gpt-5.4"))
+# OpenAI-first runtime configuration.
+# The roadmap originally referenced older GPT-4o / Whisper / TTS-1 aliases.
+# We keep the compatibility variable names while defaulting to the current
+# official model equivalents for each capability.
+LLM_PROVIDER = "openai"
+LLM_MODEL = _get_env("LLM_MODEL", _get_env("OPENAI_CHAT_MODEL", "gpt-5.4"))
+OPENAI_CHAT_MODEL = LLM_MODEL
+OPENAI_DETECTION_MODEL = _get_env("OPENAI_DETECTION_MODEL", _get_env("OPENAI_CLASSIFIER_MODEL", "gpt-5.4-mini"))
+OPENAI_EXTRACTION_MODEL = _get_env("OPENAI_EXTRACTION_MODEL", LLM_MODEL)
+WHISPER_MODEL = _get_env("WHISPER_MODEL", _get_env("OPENAI_STT_MODEL", "gpt-4o-transcribe"))
+OPENAI_STT_MODEL = WHISPER_MODEL
+TTS_MODEL = _get_env("TTS_MODEL", _get_env("OPENAI_TTS_MODEL", "gpt-4o-mini-tts"))
+OPENAI_TTS_MODEL = TTS_MODEL
+TTS_VOICE = _get_env("TTS_VOICE", _get_env("OPENAI_TTS_VOICE", "nova"))
+OPENAI_TTS_VOICE = TTS_VOICE
+EMBEDDING_MODEL = _get_env("EMBEDDING_MODEL", _get_env("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"))
+OPENAI_EMBEDDING_MODEL = EMBEDDING_MODEL
+OPENAI_VISION_MODEL = _get_env("OPENAI_VISION_MODEL", LLM_MODEL)
+OPENAI_REALTIME_MODEL = _get_env("OPENAI_REALTIME_MODEL", "gpt-realtime")
 OPENAI_REASONING_EFFORT = _get_env("OPENAI_REASONING_EFFORT", "none")
 OPENAI_VERBOSITY = _get_env("OPENAI_VERBOSITY", "low")
-OPENAI_STT_MODEL = _get_env("OPENAI_STT_MODEL", "gpt-4o-transcribe-latest")
-OPENAI_TTS_MODEL = _get_env("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
-OPENAI_TTS_VOICE = _get_env("OPENAI_TTS_VOICE", "alloy")
-OPENAI_EMBEDDING_MODEL = _get_env("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
-OPENAI_VISION_MODEL = _get_env("OPENAI_VISION_MODEL", OPENAI_CHAT_MODEL)
-OPENAI_REALTIME_MODEL = _get_env("OPENAI_REALTIME_MODEL", "gpt-realtime")
-
-
-# Runtime provider selection used by the current agents
-LLM_PROVIDER = _get_env("LLM_PROVIDER", "openai").lower()
-LLM_MODEL = _get_env("LLM_MODEL", OPENAI_CHAT_MODEL)
-FALLBACK_PROVIDER = _get_env("FALLBACK_PROVIDER", "none").lower()
-FALLBACK_MODEL = _get_env("FALLBACK_MODEL", OPENAI_CHAT_MODEL)
 LLM_TIMEOUT_SECONDS = int(_get_env("LLM_TIMEOUT_SECONDS", "12"))
+
+
+# Legacy provider secrets intentionally removed from runtime config:
+# CEREBRAS_API_KEY, GROQ_API_KEY, DEEPGRAM_API_KEY, ELEVENLABS_API_KEY
 
 
 MODE = _get_env("MODE", "prod").lower()
