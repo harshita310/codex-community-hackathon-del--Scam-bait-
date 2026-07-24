@@ -18,6 +18,7 @@ from app.config import (
     OPENAI_REASONING_EFFORT,
     OPENAI_VERBOSITY,
 )
+from app.message_content import message_content_to_text
 from app.utils import logger
 
 
@@ -149,7 +150,7 @@ Your response:"""
         llm = get_llm()
         if llm is not None:
             response = await asyncio.wait_for(llm.ainvoke(messages), timeout=LLM_TIMEOUT_SECONDS)
-            persona_text = response.content.strip()
+            persona_text = message_content_to_text(response.content).strip()
             persona_text = clean_persona_response(persona_text)
             if persona_text:
                 logger.info(f"OK: Persona response ({context_strategy['mode']}): {persona_text[:60]}...")
