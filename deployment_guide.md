@@ -1,4 +1,4 @@
-# Deployment Guide: ScamBait AI on Render
+# Deployment Guide: Honeypot AI on Render
 
 This guide covers deploying the backend API, Telegram bot, and dashboard from this repository to Render.
 

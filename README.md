@@ -1,8 +1,8 @@
-# **ScamBait AI**
+# **Honeypot AI**
 
-ScamBait AI is an agentic honeypot system that engages scammers, extracts intelligence, and disrupts their operations by wasting their most valuable resource - time.
+Honeypot AI is an agentic honeypot system that engages scammers, extracts intelligence, and disrupts their operations by wasting their most valuable resource - time.
 
-We deployed ScamBait AI across two real-world channels to demonstrate its capabilities.
+We deployed Honeypot AI across two real-world channels to demonstrate its capabilities.
 
 First: Telegram.
 Telegram is widely used by scammers. We deployed a bot that behaves like a real human. Every message from the scammer is forwarded to our backend, where an LLM generates realistic replies.
@@ -30,9 +30,9 @@ Using Twilio, we host real phone numbers that connect directly to our system. Wh
 
 ## Architecture Diagram
 
-*High-level system architecture (ScamBait AI).*
+*High-level system architecture (Honeypot AI).*
 
-![ScamBait AI Architecture](images/ScamBaitAI.pdf.jpg)
+![Honeypot AI Architecture](images/ScamBaitAI.pdf.jpg)
 
 ---
 
@@ -40,7 +40,7 @@ Using Twilio, we host real phone numbers that connect directly to our system. Wh
 
 *End-to-end flow: from scammer contact to intelligence extraction.*
 
-![How ScamBait AI Works](images/new.jpg)
+![How Honeypot AI Works](images/new.jpg)
 
 ---
 
