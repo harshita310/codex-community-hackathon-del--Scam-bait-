@@ -3,12 +3,12 @@ import base64
 import json
 import tempfile
 import time
-import wave
 from pathlib import Path
 
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app.agents.persona import generate_persona_response
+from app.services.voice_audio import twilio_mulaw_to_wav, wav_to_twilio_mulaw
 from app.services.voice_service import synthesize_speech, transcribe_audio
 from app.utils import logger
 
@@ -103,23 +103,15 @@ class AudioOrchestrator:
             self.processing_audio = False
 
     def _write_audio_chunk(self, audio_chunk: bytes) -> str:
-        """
-        Wrap the inbound Twilio audio bytes in a WAV container so they can be
-        handed to the transcription endpoint.
-        """
+        """Convert inbound Twilio mulaw audio to WAV for transcription."""
         input_path = self.temp_dir / f"input_{int(time.time() * 1000)}.wav"
-        with wave.open(str(input_path), "wb") as wav_file:
-            wav_file.setnchannels(1)
-            wav_file.setsampwidth(1)
-            wav_file.setframerate(8000)
-            wav_file.writeframes(audio_chunk)
-        return str(input_path)
+        return twilio_mulaw_to_wav(audio_chunk, str(input_path))
 
     async def _send_audio_file(self, output_path: str):
         if not self.stream_sid:
             return
 
-        audio_bytes = Path(output_path).read_bytes()
+        audio_bytes = wav_to_twilio_mulaw(output_path)
         audio_payload = base64.b64encode(audio_bytes).decode("utf-8")
         media_message = {
             "event": "media",
