@@ -21,7 +21,7 @@ export const Layout = ({ children, activeTab, onTabChange }: LayoutProps) => {
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white">
             <ShieldAlert size={18} />
           </div>
-          <h1 className="font-bold text-slate-800 tracking-tight">Honeypot AI</h1>
+          <h1 className="font-bold text-slate-800 tracking-tight">Honeytrap AI</h1>
         </div>
 
         <nav className="flex-1 p-4 space-y-1">

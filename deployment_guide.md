@@ -1,4 +1,4 @@
-# Deployment Guide: Honeypot AI on Render
+# Deployment Guide: Honeytrap AI on Render
 
 This guide covers deploying the backend API, Telegram bot, and dashboard from this repository to Render.
 

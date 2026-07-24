@@ -1,8 +1,8 @@
-# **Honeypot AI**
+# **Honeytrap AI**
 
-Honeypot AI is an agentic honeypot system that engages scammers, extracts intelligence, and disrupts their operations by wasting their most valuable resource - time.
+Honeytrap AI is an agentic honeypot system that engages scammers, extracts intelligence, and disrupts their operations by wasting their most valuable resource - time.
 
-We deployed Honeypot AI across two real-world channels to demonstrate its capabilities.
+We deployed Honeytrap AI across two real-world channels to demonstrate its capabilities.
 
 First: Telegram.
 Telegram is widely used by scammers. We deployed a bot that behaves like a real human. Every message from the scammer is forwarded to our backend, where an LLM generates realistic replies.
@@ -30,9 +30,9 @@ Using Twilio, we host real phone numbers that connect directly to our system. Wh
 
 ## Architecture Diagram
 
-*High-level system architecture (Honeypot AI).*
+*High-level system architecture (Honeytrap AI).*
 
-![Honeypot AI Architecture](images/ScamBaitAI.pdf.jpg)
+![Honeytrap AI Architecture](images/ScamBaitAI.pdf.jpg)
 
 ---
 
@@ -40,7 +40,7 @@ Using Twilio, we host real phone numbers that connect directly to our system. Wh
 
 *End-to-end flow: from scammer contact to intelligence extraction.*
 
-![How Honeypot AI Works](images/new.jpg)
+![How Honeytrap AI Works](images/new.jpg)
 
 ---
 
