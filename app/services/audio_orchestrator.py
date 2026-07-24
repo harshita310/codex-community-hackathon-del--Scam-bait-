@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import WebSocket, WebSocketDisconnect
 
 from app.agents.persona import generate_persona_response
-from app.services.voice_audio import twilio_mulaw_to_wav, wav_to_twilio_mulaw
+from app.services.voice_audio import is_probable_speech, twilio_mulaw_to_wav, wav_to_twilio_mulaw
 from app.services.voice_service import synthesize_speech, transcribe_audio
 from app.utils import logger
 
@@ -18,6 +18,7 @@ class AudioOrchestrator:
         self.websocket = websocket
         self.stream_sid: str | None = None
         self.processing_audio = False
+        self.speaking = False
         self.conversation_history: list[dict] = []
         self.input_buffer = bytearray()
         self.temp_dir = Path(tempfile.gettempdir()) / "kaizen_voice"
@@ -52,6 +53,9 @@ class AudioOrchestrator:
             return
 
         if event == "media":
+            if self.speaking:
+                return
+
             payload = data.get("media", {}).get("payload")
             if not payload:
                 return
@@ -74,6 +78,9 @@ class AudioOrchestrator:
     async def process_audio_chunk(self, audio_chunk: bytes):
         """Transcribe buffered caller audio, run the persona, and synthesize a reply."""
         if not audio_chunk:
+            return
+        if not is_probable_speech(audio_chunk):
+            logger.info("Skipping low-energy voice chunk.")
             return
 
         self.processing_audio = True
@@ -123,11 +130,16 @@ class AudioOrchestrator:
     async def stream_tts(self, text: str):
         output_path = str(self.temp_dir / f"greeting_{int(time.time() * 1000)}.wav")
         try:
+            self.speaking = True
             await synthesize_speech(text, output_path)
             await self._send_audio_file(output_path)
         except Exception as e:
             logger.error(f"Error streaming TTS: {e}", exc_info=True)
+        finally:
+            self.input_buffer.clear()
+            self.speaking = False
 
     async def cleanup(self):
         self.processing_audio = False
+        self.speaking = False
         logger.info("AudioOrchestrator cleaned up")

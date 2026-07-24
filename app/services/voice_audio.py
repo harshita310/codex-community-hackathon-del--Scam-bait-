@@ -56,6 +56,22 @@ def _resample_nearest(samples: list[int], source_rate: int, target_rate: int) ->
     ]
 
 
+def is_probable_speech(
+    audio_chunk: bytes,
+    *,
+    min_average_amplitude: int = 450,
+    min_peak_amplitude: int = 2500,
+) -> bool:
+    """Cheaply reject silence/background noise before calling transcription."""
+    if not audio_chunk:
+        return False
+
+    samples = [_ulaw_byte_to_pcm16(value) for value in audio_chunk]
+    average_amplitude = sum(abs(sample) for sample in samples) / len(samples)
+    peak_amplitude = max(abs(sample) for sample in samples)
+    return average_amplitude >= min_average_amplitude and peak_amplitude >= min_peak_amplitude
+
+
 def twilio_mulaw_to_wav(audio_chunk: bytes, output_path: str) -> str:
     """Convert Twilio Media Streams mulaw/8k audio into PCM WAV for STT."""
     pcm_audio = b"".join(

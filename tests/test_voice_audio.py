@@ -4,7 +4,7 @@ import unittest
 import wave
 from pathlib import Path
 
-from app.services.voice_audio import twilio_mulaw_to_wav, wav_to_twilio_mulaw
+from app.services.voice_audio import is_probable_speech, twilio_mulaw_to_wav, wav_to_twilio_mulaw
 
 
 class VoiceAudioConversionTests(unittest.TestCase):
@@ -41,6 +41,12 @@ class VoiceAudioConversionTests(unittest.TestCase):
         self.assertIsInstance(mulaw_payload, bytes)
         self.assertGreater(len(mulaw_payload), 0)
         self.assertLess(len(mulaw_payload), len(b"".join(samples)))
+
+    def test_detects_silent_mulaw_as_not_speech(self):
+        self.assertFalse(is_probable_speech(bytes([0xFF]) * 8000))
+
+    def test_detects_loud_mulaw_as_probable_speech(self):
+        self.assertTrue(is_probable_speech(bytes([0x00, 0x80]) * 4000))
 
 
 if __name__ == "__main__":
