@@ -1,0 +1,1 @@
+INITIAL_VOICE_GREETING = "Aap kon?"

@@ -12,6 +12,7 @@ from app.services.voice_audio import is_probable_speech, twilio_mulaw_to_wav, wa
 from app.services.voice_service import synthesize_speech, transcribe_audio
 from app.services.voice_turns import VoiceTurnBuffer
 from app.utils import logger
+from app.voice_greeting import INITIAL_VOICE_GREETING
 
 
 class AudioOrchestrator:
@@ -48,7 +49,7 @@ class AudioOrchestrator:
         if event == "start":
             self.stream_sid = data["start"]["streamSid"]
             logger.info(f"Twilio stream started: {self.stream_sid}")
-            initial_text = "Hello? Who is this?"
+            initial_text = INITIAL_VOICE_GREETING
             self.conversation_history.append({"sender": "ai", "text": initial_text})
             await self.stream_tts(initial_text)
             return
