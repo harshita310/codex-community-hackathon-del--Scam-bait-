@@ -23,9 +23,9 @@ class VoiceServiceConfigTests(unittest.TestCase):
         self.assertEqual(kwargs["speed"], 0.82)
         self.assertEqual(kwargs["response_format"], "wav")
 
-    def test_default_tts_fallback_is_deepgram_secondary(self):
+    def test_default_tts_fallback_is_disabled(self):
         self.assertEqual(voice_service.TTS_PROVIDER, "openai")
-        self.assertEqual(voice_service.TTS_FALLBACK_PROVIDER, "deepgram")
+        self.assertEqual(voice_service.TTS_FALLBACK_PROVIDER, "")
 
     def test_elevenlabs_payload_uses_voice_speed(self):
         payload = _build_elevenlabs_payload("namaste", 0.82)

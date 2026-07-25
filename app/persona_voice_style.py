@@ -31,7 +31,7 @@ def detect_voice_reply_style(last_message: str, metadata: dict | None = None) ->
     lower_words = set(re.findall(r"[a-z0-9@]+", text.lower()))
 
     if metadata.get("source") == "voice_call":
-        return "HINDI"
+        return "HINGLISH"
 
     if any("\u0900" <= char <= "\u097f" for char in text):
         return "HINGLISH"
