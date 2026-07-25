@@ -1,6 +1,10 @@
 import os
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv():
+        return None
 
 
 load_dotenv()
@@ -20,6 +24,16 @@ def _get_bool(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.lower() in {"1", "true", "yes", "on"}
+
+
+def _get_float(name: str, default: float) -> float:
+    value = _get_env(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
 
 
 API_KEY = _get_env("API_KEY") or _get_env("HACKATHON_API_KEY") or "temp-key"
@@ -55,6 +69,16 @@ TTS_MODEL = _get_env("TTS_MODEL", _get_env("OPENAI_TTS_MODEL", "gpt-4o-mini-tts"
 OPENAI_TTS_MODEL = TTS_MODEL
 TTS_VOICE = _get_env("TTS_VOICE", _get_env("OPENAI_TTS_VOICE", "nova"))
 OPENAI_TTS_VOICE = TTS_VOICE
+TTS_PROVIDER = _get_env("TTS_PROVIDER", "openai").lower()
+TTS_SPEED = _get_float("TTS_SPEED", 0.82)
+ELEVENLABS_API_KEY = _get_env("ELEVENLABS_API_KEY")
+ELEVENLABS_VOICE_ID = _get_env("ELEVENLABS_VOICE_ID", "Gfpl8Yo74Is0W6cPUWWT")
+ELEVENLABS_MODEL_ID = _get_env("ELEVENLABS_MODEL_ID", "eleven_turbo_v2_5")
+OPENAI_STT_PROMPT = _get_env(
+    "OPENAI_STT_PROMPT",
+    "This is an Indian scam call. Transcribe Hindi, Hinglish, and English accurately. "
+    "Preserve OTP, UPI IDs, phone numbers, bank names, and payment instructions.",
+)
 EMBEDDING_MODEL = _get_env("EMBEDDING_MODEL", _get_env("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"))
 OPENAI_EMBEDDING_MODEL = EMBEDDING_MODEL
 OPENAI_VISION_MODEL = _get_env("OPENAI_VISION_MODEL", LLM_MODEL)
