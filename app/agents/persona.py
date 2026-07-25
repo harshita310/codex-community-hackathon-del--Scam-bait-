@@ -19,6 +19,12 @@ from app.config import (
     OPENAI_VERBOSITY,
 )
 from app.message_content import message_content_to_text
+from app.persona_voice_style import (
+    detect_voice_reply_style,
+    extract_spoken_text,
+    is_repetitive_response,
+    voice_reply_instruction,
+)
 from app.utils import logger
 
 
@@ -104,16 +110,7 @@ async def generate_persona_response(
 
     system_prompt = build_system_prompt(context_strategy)
 
-    detected_lang = "ENGLISH"
-    if any(ord(c) > 2300 for c in last_msg_text):
-        detected_lang = "HINDI (Devanagari)"
-    elif any(
-        w in last_msg_text.lower().split()
-        for w in ["bhai", "nahi", "haan", "kya", "karo", "jaldi", "bhejo", "mera", "mujhe", "tum"]
-    ):
-        detected_lang = "HINGLISH"
-    elif not last_msg_text and metadata.get("language") == "Hindi":
-        detected_lang = "HINDI"
+    detected_lang = detect_voice_reply_style(last_msg_text, metadata)
 
     logger.info(f"Context Language: {detected_lang}")
 
@@ -124,13 +121,13 @@ async def generate_persona_response(
 The user is speaking {detected_lang}.
 You MUST reply in {detected_lang}.
 
-{(
-    'CONSTRAINT: Speak PURE ENGLISH. Do not use Indian honorifics like "Bhai", "Arre", "Ji", or Hindi words.'
-    if detected_lang == 'ENGLISH'
-    else 'CONSTRAINT: Speak natural HINGLISH (Mix of Hindi/English). Use words like "Bhai", "Arre", "Kya".'
-)}
+{voice_reply_instruction(detected_lang)}
 
-{('DO NOT use English words.' if detected_lang == 'HINDI (Devanagari)' else '')}
+VOICE CALL TURN-TAKING:
+- Answer only the latest complete caller turn.
+- Do not repeat your previous reply.
+- If the caller interrupts or sounds unclear, acknowledge briefly and ask them to repeat slowly.
+- Do not answer multiple imagined questions. One short response only.
 
 Generate your next response as the elderly person.
 
@@ -153,6 +150,9 @@ Your response:"""
             persona_text = message_content_to_text(response.content).strip()
             persona_text = clean_persona_response(persona_text)
             if persona_text:
+                if is_repetitive_response(persona_text, conversation_history):
+                    logger.info("Persona response repeated recent AI message. Using fallback.")
+                    return get_fallback_response(conversation_history)
                 logger.info(f"OK: Persona response ({context_strategy['mode']}): {persona_text[:60]}...")
                 return persona_text
     except Exception as e:
@@ -335,12 +335,13 @@ CRITICAL RULES (STRICT COMPLIANCE REQUIRED):
 2. NO TRANSLATIONS: If you speak Hindi/Hinglish, DO NOT translate it to English. Output only the spoken words.
 3. NO PLACEHOLDERS: NEVER use "[insert number]" or "[some numbers]". GENERATE realistic fake data (e.g., "982... um... 761...").
 4. STRICT LANGUAGE MIRRORING:
-   - If User speaks English -> You speak English.
-   - If User speaks Hindi (Devanagari) -> You speak Hindi.
-   - If User speaks Hinglish (Roman Hindi) -> You speak Hinglish.
-   - DO NOT mix languages unless the user does.
+   - In Telegram text chat, copy the user's language style.
+   - In voice calls, stay in natural Indian Hinglish because callers often mix Hindi and English.
+   - Do not bounce between pure English and pure Hindi from one turn to the next.
 5. BE CONVINCING: You are an elderly person. You do not know what "AI" or "Honeypot" is.
 6. SHORT RESPONSES: Keep it under 2 sentences. You are confused and slow.
+7. TURN TAKING: In calls, respond once, then stop and wait for the caller.
+8. NO REPETITION: Do not reuse the same sentence or excuse you already said recently.
 
 YOUR PERSONALITY:
 - Worried, anxious, scared
@@ -351,6 +352,7 @@ YOUR PERSONALITY:
 
 LANGUAGE INSTRUCTION:
 - The user's message is your guide. COPY THEIR LANGUAGE STYLE.
+- For voice calls, prefer Hinglish unless explicitly told to speak only English.
 - If they say "Bhai paise bhej", you reply in Hinglish.
 - If they say "Verify account", you reply in English.
 - NEVER provide a translation in parenthesis.
@@ -473,6 +475,8 @@ def sanitize_response(response: str) -> str:
 
 def clean_persona_response(text: str) -> str:
     """Clean up LLM response artifacts."""
+    text = extract_spoken_text(text)
+
     if text.startswith('"') and text.endswith('"'):
         text = text[1:-1]
     if text.startswith("'") and text.endswith("'"):

@@ -10,6 +10,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from app.agents.persona import generate_persona_response
 from app.services.voice_audio import is_probable_speech, twilio_mulaw_to_wav, wav_to_twilio_mulaw
 from app.services.voice_service import synthesize_speech, transcribe_audio
+from app.services.voice_turns import VoiceTurnBuffer
 from app.utils import logger
 
 
@@ -20,7 +21,7 @@ class AudioOrchestrator:
         self.processing_audio = False
         self.speaking = False
         self.conversation_history: list[dict] = []
-        self.input_buffer = bytearray()
+        self.turn_buffer = VoiceTurnBuffer()
         self.temp_dir = Path(tempfile.gettempdir()) / "kaizen_voice"
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
@@ -60,18 +61,15 @@ class AudioOrchestrator:
             if not payload:
                 return
 
-            self.input_buffer.extend(base64.b64decode(payload))
-            if not self.processing_audio and len(self.input_buffer) >= 16000:
-                chunk = bytes(self.input_buffer)
-                self.input_buffer.clear()
+            chunk = self.turn_buffer.add(base64.b64decode(payload))
+            if chunk and not self.processing_audio:
                 asyncio.create_task(self.process_audio_chunk(chunk))
             return
 
         if event == "stop":
             logger.info("Twilio stream stopped")
-            if self.input_buffer and not self.processing_audio:
-                chunk = bytes(self.input_buffer)
-                self.input_buffer.clear()
+            chunk = self.turn_buffer.flush()
+            if chunk and not self.processing_audio:
                 await self.process_audio_chunk(chunk)
             await self.cleanup()
 
@@ -136,10 +134,11 @@ class AudioOrchestrator:
         except Exception as e:
             logger.error(f"Error streaming TTS: {e}", exc_info=True)
         finally:
-            self.input_buffer.clear()
+            self.turn_buffer.clear()
             self.speaking = False
 
     async def cleanup(self):
         self.processing_audio = False
         self.speaking = False
+        self.turn_buffer.clear()
         logger.info("AudioOrchestrator cleaned up")
