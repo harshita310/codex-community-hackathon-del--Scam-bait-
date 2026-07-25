@@ -31,7 +31,7 @@ def detect_voice_reply_style(last_message: str, metadata: dict | None = None) ->
     lower_words = set(re.findall(r"[a-z0-9@]+", text.lower()))
 
     if metadata.get("source") == "voice_call":
-        return "HINGLISH"
+        return "HINDI"
 
     if any("\u0900" <= char <= "\u097f" for char in text):
         return "HINGLISH"
@@ -46,6 +46,14 @@ def detect_voice_reply_style(last_message: str, metadata: dict | None = None) ->
 
 
 def voice_reply_instruction(style: str) -> str:
+    if style == "HINDI":
+        return (
+            "CONSTRAINT: Speak simple Hindi as the main language in a natural Indian phone-call style. "
+            "Use Devanagari Hindi where possible, but keep common words like OTP, UPI, bank, Paytm, and Google Pay as-is. "
+            "Do not switch to pure English. "
+            "Keep it to one or two short sentences and ask only one question."
+        )
+
     if style == "HINGLISH":
         return (
             "CONSTRAINT: Speak natural Hinglish in simple Indian phone-call style. "
