@@ -139,7 +139,10 @@ def _synthesize_elevenlabs_speech_sync(text: str, output_path: str) -> str:
 
 def _synthesize_speech_sync(text: str, output_path: str) -> str:
     if TTS_PROVIDER == "elevenlabs":
-        return _synthesize_elevenlabs_speech_sync(text, output_path)
+        try:
+            return _synthesize_elevenlabs_speech_sync(text, output_path)
+        except Exception as e:
+            logger.error("ElevenLabs TTS failed, falling back to OpenAI TTS: %s", e)
     return _synthesize_openai_speech_sync(text, output_path)
 
 
