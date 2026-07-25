@@ -70,10 +70,14 @@ OPENAI_TTS_MODEL = TTS_MODEL
 TTS_VOICE = _get_env("TTS_VOICE", _get_env("OPENAI_TTS_VOICE", "nova"))
 OPENAI_TTS_VOICE = TTS_VOICE
 TTS_PROVIDER = _get_env("TTS_PROVIDER", "openai").lower()
+TTS_FALLBACK_PROVIDER = _get_env("TTS_FALLBACK_PROVIDER", "deepgram").lower()
 TTS_SPEED = _get_float("TTS_SPEED", 0.82)
 ELEVENLABS_API_KEY = _get_env("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = _get_env("ELEVENLABS_VOICE_ID", "Gfpl8Yo74Is0W6cPUWWT")
 ELEVENLABS_MODEL_ID = _get_env("ELEVENLABS_MODEL_ID", "eleven_turbo_v2_5")
+DEEPGRAM_API_KEY = _get_env("DEEPGRAM_API_KEY")
+DEEPGRAM_TTS_MODEL = _get_env("DEEPGRAM_TTS_MODEL", "aura-2-thalia-en")
+DEEPGRAM_TTS_SAMPLE_RATE = int(_get_env("DEEPGRAM_TTS_SAMPLE_RATE", "16000"))
 OPENAI_STT_PROMPT = _get_env(
     "OPENAI_STT_PROMPT",
     "This is an Indian scam call. Transcribe Hindi, Hinglish, and English accurately. "

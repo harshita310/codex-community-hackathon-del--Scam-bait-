@@ -4,11 +4,15 @@ import logging
 import wave
 
 from app.config import (
+    DEEPGRAM_API_KEY,
+    DEEPGRAM_TTS_MODEL,
+    DEEPGRAM_TTS_SAMPLE_RATE,
     ELEVENLABS_API_KEY,
     ELEVENLABS_MODEL_ID,
     ELEVENLABS_VOICE_ID,
     OPENAI_API_KEY,
     OPENAI_STT_PROMPT,
+    TTS_FALLBACK_PROVIDER,
     TTS_MODEL,
     TTS_PROVIDER,
     TTS_SPEED,
@@ -77,6 +81,15 @@ def _build_elevenlabs_payload(text: str, speed: float = TTS_SPEED) -> dict:
     }
 
 
+def _build_deepgram_tts_params() -> dict:
+    return {
+        "model": DEEPGRAM_TTS_MODEL,
+        "encoding": "linear16",
+        "container": "wav",
+        "sample_rate": DEEPGRAM_TTS_SAMPLE_RATE,
+    }
+
+
 def _transcribe_audio_sync(audio_file_path: str) -> str:
     client = _require_client()
     with open(audio_file_path, "rb") as audio_file:
@@ -137,13 +150,57 @@ def _synthesize_elevenlabs_speech_sync(text: str, output_path: str) -> str:
     return str(output_file)
 
 
+def _synthesize_deepgram_speech_sync(text: str, output_path: str) -> str:
+    if not DEEPGRAM_API_KEY:
+        raise RuntimeError("DEEPGRAM_API_KEY is required when TTS_FALLBACK_PROVIDER=deepgram.")
+    import requests
+
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    response = requests.post(
+        "https://api.deepgram.com/v1/speak",
+        params=_build_deepgram_tts_params(),
+        headers={
+            "Authorization": f"Token {DEEPGRAM_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={"text": text},
+        timeout=30,
+    )
+    response.raise_for_status()
+    output_file.write_bytes(response.content)
+    return str(output_file)
+
+
+def _synthesize_with_provider(provider: str, text: str, output_path: str) -> str:
+    if provider == "openai":
+        return _synthesize_openai_speech_sync(text, output_path)
+    if provider == "deepgram":
+        return _synthesize_deepgram_speech_sync(text, output_path)
+    if provider == "elevenlabs":
+        return _synthesize_elevenlabs_speech_sync(text, output_path)
+    raise RuntimeError(f"Unsupported TTS provider: {provider}")
+
+
+def _tts_provider_chain() -> list[str]:
+    providers = [TTS_PROVIDER]
+    if TTS_FALLBACK_PROVIDER and TTS_FALLBACK_PROVIDER not in providers:
+        providers.append(TTS_FALLBACK_PROVIDER)
+    if TTS_PROVIDER != "openai" and "openai" not in providers:
+        providers.append("openai")
+    return providers
+
+
 def _synthesize_speech_sync(text: str, output_path: str) -> str:
-    if TTS_PROVIDER == "elevenlabs":
+    last_error = None
+    for provider in _tts_provider_chain():
         try:
-            return _synthesize_elevenlabs_speech_sync(text, output_path)
+            return _synthesize_with_provider(provider, text, output_path)
         except Exception as e:
-            logger.error("ElevenLabs TTS failed, falling back to OpenAI TTS: %s", e)
-    return _synthesize_openai_speech_sync(text, output_path)
+            last_error = e
+            logger.error("%s TTS failed, trying next provider: %s", provider, e)
+    raise last_error or RuntimeError("No TTS provider configured.")
 
 
 async def synthesize_speech(text: str, output_path: str) -> str:
